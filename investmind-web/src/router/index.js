@@ -8,6 +8,7 @@ import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import Profile from '../views/Profile.vue'
 import Philosophy from '../views/Philosophy.vue'
+import Advisor from '../views/Advisor.vue'
 
 const routes = [
   {
@@ -28,6 +29,12 @@ const routes = [
     component: ReportDetail,
     meta: { title: '报告详情', requiresAuth: true },
     props: true
+  },
+  {
+    path: '/advisor',
+    name: 'Advisor',
+    component: Advisor,
+    meta: { title: '智投问答', requiresAuth: true }
   },
   {
     path: '/about',
@@ -83,7 +90,13 @@ router.beforeEach((to, from, next) => {
 
   // 仅游客可访问的页面（登录后不能访问）
   if (to.meta.guestOnly && authStore.isLoggedIn) {
-    next('/')
+    next('/advisor')
+    return
+  }
+
+  // 登录后不再进入首页/关于，统一进入问答页
+  if (authStore.isLoggedIn && (to.path === '/' || to.path === '/about')) {
+    next('/advisor')
     return
   }
 

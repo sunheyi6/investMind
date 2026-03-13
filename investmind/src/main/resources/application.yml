@@ -46,14 +46,20 @@ investmind:
 
   # 大模型API配置 (以OpenAI格式为例)
   ai:
-    api-key: ${AI_API_KEY:your-api-key}
-    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
-    model: ${AI_MODEL:gpt-4}
+    api-key: sk-cm5igfBXrGjJoXi5L4Gcsudc9Q0m8YUiMwQQATa3UohMQVWz
+    base-url: https://api.moonshot.cn/v1
+    model: moonshot-v1-8k
+    chat-endpoint: /chat/completions
+    embedding-endpoint: /embeddings
+    embedding-model: text-embedding-3-small
+    web-search-enabled: true
+    web-search-base-url: https://s.jina.ai/
+    web-search-max-chars: 4000
 
   # JWT配置
   jwt:
     # JWT密钥（使用Base64编码，生产环境请使用复杂密钥）
-    secret: ${JWT_SECRET:SW52ZXN0TWluZFNlY3JldEtleTIwMjRVc2VkRm9ySldUVG9rZW5HZW5lcmF0aW9uQW5kVmFsaWRhdGlvbg==}
+    secret: ${JWT_SECRET:SW52ZXN0TWluZFNlY3JldEtleTIwMjRVc2VkRm9ySldUVG9rZW5HZW5lcmF0aW9uQW5kVmFsaWRhdGlvblBsdXNFbm91Z2hMZW5ndGhGb3JIUzUxMkFsZ29yaXRobQ==}
     # 访问令牌过期时间（秒），默认24小时
     access-token-expiration: ${JWT_ACCESS_EXPIRATION:86400}
     # 刷新令牌过期时间（秒），默认7天
@@ -71,5 +77,7 @@ logging:
   level:
     com.investmind: debug
     com.baomidou.mybatisplus: debug
+
+
 
 

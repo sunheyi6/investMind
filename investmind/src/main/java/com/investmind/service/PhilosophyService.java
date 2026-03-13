@@ -37,4 +37,14 @@ public interface PhilosophyService {
      * @param userId 用户ID
      */
     void initializePhilosophy(Long userId);
+
+    /**
+     * 用自然语言迭代更新理念
+     */
+    UserResponse.PhilosophyResponse ingestNaturalLanguage(String inputText);
+
+    /**
+     * 生成当前用户的投资理念文档
+     */
+    UserResponse.PhilosophyDocumentResponse generateCurrentUserDocument();
 }

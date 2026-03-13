@@ -188,8 +188,8 @@ const handleRegister = async () => {
     await authStore.register(registerData)
     ElMessage.success('注册成功')
 
-    // 跳转到首页
-    router.push('/')
+    // 跳转到问答页
+    router.push('/advisor')
   } catch (error) {
     console.error('注册失败:', error)
   } finally {

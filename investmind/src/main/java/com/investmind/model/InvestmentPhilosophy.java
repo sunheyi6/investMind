@@ -52,6 +52,41 @@ public class InvestmentPhilosophy {
     private String philosophyDescription;
 
     /**
+     * 核心投资哲学
+     */
+    private String coreInvestmentPhilosophy;
+
+    /**
+     * 选股标准
+     */
+    private String stockSelectionCriteria;
+
+    /**
+     * 估值逻辑
+     */
+    private String valuationLogic;
+
+    /**
+     * 仓位管理规则
+     */
+    private String positionManagementRules;
+
+    /**
+     * 卖出条件
+     */
+    private String sellConditions;
+
+    /**
+     * 持有周期（文本描述）
+     */
+    private String holdingPeriod;
+
+    /**
+     * 行业限制
+     */
+    private String industryRestrictions;
+
+    /**
      * 策略备注
      */
     private String strategyNotes;
@@ -70,6 +105,11 @@ public class InvestmentPhilosophy {
      * 学习迭代次数
      */
     private Integer learningIterations;
+
+    /**
+     * 理念版本号
+     */
+    private Integer versionNo;
 
     /**
      * 创建时间

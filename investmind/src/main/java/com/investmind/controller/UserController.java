@@ -70,4 +70,23 @@ public class UserController {
         UserResponse.PhilosophyResponse philosophy = philosophyService.updateCurrentUserPhilosophy(request);
         return ApiResponse.success("投资理念配置更新成功", philosophy);
     }
+
+    /**
+     * 用自然语言迭代投资理念
+     */
+    @PostMapping("/philosophy/ingest")
+    public ApiResponse<UserResponse.PhilosophyResponse> ingestPhilosophy(
+            @Valid @RequestBody UserRequest.IngestPhilosophyRequest request) {
+        UserResponse.PhilosophyResponse philosophy = philosophyService.ingestNaturalLanguage(request.getInputText());
+        return ApiResponse.success("投资理念已更新", philosophy);
+    }
+
+    /**
+     * 获取投资理念文档
+     */
+    @GetMapping("/philosophy/document")
+    public ApiResponse<UserResponse.PhilosophyDocumentResponse> getPhilosophyDocument() {
+        UserResponse.PhilosophyDocumentResponse doc = philosophyService.generateCurrentUserDocument();
+        return ApiResponse.success(doc);
+    }
 }

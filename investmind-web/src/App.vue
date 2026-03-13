@@ -3,7 +3,7 @@
     <nav class="fixed top-0 left-0 right-0 z-50 bg-secondary border-b border-default">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-14">
-          <router-link to="/" class="flex items-center space-x-3">
+          <router-link :to="isLoggedIn ? '/advisor' : '/'" class="flex items-center space-x-3">
             <div class="w-8 h-8 rounded-lg gradient-gold flex items-center justify-center">
               <el-icon class="text-primary text-lg"><TrendCharts /></el-icon>
             </div>
@@ -35,10 +35,6 @@
                 </div>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item @click="$router.push('/profile')">
-                      <el-icon class="mr-2"><User /></el-icon>
-                      个人中心
-                    </el-dropdown-item>
                     <el-dropdown-item @click="$router.push('/philosophy')">
                       <el-icon class="mr-2"><Edit /></el-icon>
                       投资理念
@@ -88,13 +84,6 @@
               {{ userInfo?.nickname || userInfo?.username }}
             </div>
             <router-link
-              to="/profile"
-              class="block px-4 py-2 rounded-lg text-secondary hover:text-primary hover:bg-card transition-all"
-              @click="mobileMenuOpen = false"
-            >
-              个人中心
-            </router-link>
-            <router-link
               to="/philosophy"
               class="block px-4 py-2 rounded-lg text-secondary hover:text-primary hover:bg-card transition-all"
               @click="mobileMenuOpen = false"
@@ -136,7 +125,7 @@
       </router-view>
     </main>
 
-    <footer class="border-t border-default mt-16">
+    <footer v-if="showFooter" class="border-t border-default mt-16">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="flex flex-col md:flex-row items-center justify-between gap-4">
           <div class="flex items-center space-x-3">
@@ -160,11 +149,12 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from './stores/auth.js'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const mobileMenuOpen = ref(false)
 
@@ -172,15 +162,16 @@ const isLoggedIn = computed(() => authStore.isLoggedIn)
 const userInfo = computed(() => authStore.userInfo)
 
 const navItems = [
-  { name: '首页', path: '/', public: true },
-  { name: '报告中心', path: '/reports', public: false },
-  { name: '关于', path: '/about', public: true }
+  { name: '智能问答', path: '/advisor', public: false },
+  { name: '我的投资理念', path: '/philosophy', public: false }
 ]
 
 // 过滤导航项（根据登录状态）
 const filteredNavItems = computed(() => {
   return navItems.filter(item => item.public || isLoggedIn.value)
 })
+
+const showFooter = computed(() => route.path !== '/advisor')
 
 const handleLogout = async () => {
   try {

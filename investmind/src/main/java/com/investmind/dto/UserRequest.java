@@ -93,6 +93,41 @@ public class UserRequest {
         private String philosophyDescription;
 
         /**
+         * 核心投资哲学
+         */
+        private String coreInvestmentPhilosophy;
+
+        /**
+         * 选股标准
+         */
+        private String stockSelectionCriteria;
+
+        /**
+         * 估值逻辑
+         */
+        private String valuationLogic;
+
+        /**
+         * 仓位管理规则
+         */
+        private String positionManagementRules;
+
+        /**
+         * 卖出条件
+         */
+        private String sellConditions;
+
+        /**
+         * 持有周期（文本）
+         */
+        private String holdingPeriod;
+
+        /**
+         * 行业限制
+         */
+        private String industryRestrictions;
+
+        /**
          * 策略备注
          */
         private String strategyNotes;
@@ -106,5 +141,14 @@ public class UserRequest {
          * 是否允许AI学习
          */
         private Integer aiLearningEnabled;
+    }
+
+    /**
+     * 自然语言更新投资理念请求
+     */
+    @Data
+    public static class IngestPhilosophyRequest {
+        @Size(min = 5, max = 5000, message = "输入内容长度需在5-5000之间")
+        private String inputText;
     }
 }

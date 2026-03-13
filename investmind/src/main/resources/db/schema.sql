@@ -146,12 +146,20 @@ CREATE TABLE IF NOT EXISTS `user_investment_philosophy` (
 
     -- 自由文本
     `philosophy_description` TEXT COMMENT '投资理念详细描述',
+    `core_investment_philosophy` TEXT COMMENT '核心投资哲学',
+    `stock_selection_criteria` TEXT COMMENT '选股标准',
+    `valuation_logic` TEXT COMMENT '估值逻辑',
+    `position_management_rules` TEXT COMMENT '仓位管理规则',
+    `sell_conditions` TEXT COMMENT '卖出条件',
+    `holding_period` VARCHAR(128) COMMENT '持有周期',
+    `industry_restrictions` VARCHAR(512) COMMENT '行业限制',
     `strategy_notes` TEXT COMMENT '策略备注',
     `risk_management` TEXT COMMENT '风险管理方法',
 
     -- AI 学习相关
     `ai_learning_enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否允许AI学习',
     `learning_iterations` INT NOT NULL DEFAULT 0 COMMENT '学习迭代次数',
+    `version_no` INT NOT NULL DEFAULT 1 COMMENT '投资理念版本号',
 
     `created_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -195,3 +203,92 @@ SET @add_user_id_index_sql = (
 PREPARE stmt_add_user_id_index FROM @add_user_id_index_sql;
 EXECUTE stmt_add_user_id_index;
 DEALLOCATE PREPARE stmt_add_user_id_index;
+
+-- user_investment_philosophy 新字段兼容补齐（MySQL 8.0.21）
+SET @add_core_philo_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'core_investment_philosophy'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `core_investment_philosophy` TEXT COMMENT ''核心投资哲学'' AFTER `philosophy_description`'
+  )
+);
+PREPARE stmt_add_core_philo FROM @add_core_philo_sql;
+EXECUTE stmt_add_core_philo;
+DEALLOCATE PREPARE stmt_add_core_philo;
+
+SET @add_stock_criteria_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'stock_selection_criteria'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `stock_selection_criteria` TEXT COMMENT ''选股标准'' AFTER `core_investment_philosophy`'
+  )
+);
+PREPARE stmt_add_stock_criteria FROM @add_stock_criteria_sql;
+EXECUTE stmt_add_stock_criteria;
+DEALLOCATE PREPARE stmt_add_stock_criteria;
+
+SET @add_valuation_logic_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'valuation_logic'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `valuation_logic` TEXT COMMENT ''估值逻辑'' AFTER `stock_selection_criteria`'
+  )
+);
+PREPARE stmt_add_valuation_logic FROM @add_valuation_logic_sql;
+EXECUTE stmt_add_valuation_logic;
+DEALLOCATE PREPARE stmt_add_valuation_logic;
+
+SET @add_position_rules_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'position_management_rules'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `position_management_rules` TEXT COMMENT ''仓位管理规则'' AFTER `valuation_logic`'
+  )
+);
+PREPARE stmt_add_position_rules FROM @add_position_rules_sql;
+EXECUTE stmt_add_position_rules;
+DEALLOCATE PREPARE stmt_add_position_rules;
+
+SET @add_sell_conditions_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'sell_conditions'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `sell_conditions` TEXT COMMENT ''卖出条件'' AFTER `position_management_rules`'
+  )
+);
+PREPARE stmt_add_sell_conditions FROM @add_sell_conditions_sql;
+EXECUTE stmt_add_sell_conditions;
+DEALLOCATE PREPARE stmt_add_sell_conditions;
+
+SET @add_holding_period_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'holding_period'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `holding_period` VARCHAR(128) COMMENT ''持有周期'' AFTER `sell_conditions`'
+  )
+);
+PREPARE stmt_add_holding_period FROM @add_holding_period_sql;
+EXECUTE stmt_add_holding_period;
+DEALLOCATE PREPARE stmt_add_holding_period;
+
+SET @add_industry_restrict_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'industry_restrictions'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `industry_restrictions` VARCHAR(512) COMMENT ''行业限制'' AFTER `holding_period`'
+  )
+);
+PREPARE stmt_add_industry_restrict FROM @add_industry_restrict_sql;
+EXECUTE stmt_add_industry_restrict;
+DEALLOCATE PREPARE stmt_add_industry_restrict;
+
+SET @add_version_no_sql = (
+  SELECT IF(
+    EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_investment_philosophy' AND COLUMN_NAME = 'version_no'),
+    'SELECT 1',
+    'ALTER TABLE `user_investment_philosophy` ADD COLUMN `version_no` INT NOT NULL DEFAULT 1 COMMENT ''投资理念版本号'' AFTER `learning_iterations`'
+  )
+);
+PREPARE stmt_add_version_no FROM @add_version_no_sql;
+EXECUTE stmt_add_version_no;
+DEALLOCATE PREPARE stmt_add_version_no;

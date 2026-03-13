@@ -118,7 +118,7 @@ const handleLogin = async () => {
     ElMessage.success('登录成功')
 
     // 跳转到首页或之前的页面
-    const redirect = router.currentRoute.value.query.redirect || '/'
+    const redirect = router.currentRoute.value.query.redirect || '/advisor'
     router.push(redirect)
   } catch (error) {
     console.error('登录失败:', error)
