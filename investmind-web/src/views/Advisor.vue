@@ -412,8 +412,13 @@ const sendMessage = async () => {
     const answer = res?.data?.answer || '暂时没有拿到回答，请稍后再试。'
     appendAssistantMessage(session, answer)
   } catch (error) {
-    appendAssistantMessage(session, '请求失败，请稍后重试。')
-    ElMessage.error('提问失败，请稍后再试')
+    if (error?.code === 'ECONNABORTED') {
+      appendAssistantMessage(session, '请求超时。建议稍后重试，或先关闭联网检索以提升响应速度。')
+      ElMessage.error('请求超时，请稍后重试')
+    } else {
+      appendAssistantMessage(session, '请求失败，请稍后重试。')
+      ElMessage.error('提问失败，请稍后再试')
+    }
   } finally {
     asking.value = false
   }

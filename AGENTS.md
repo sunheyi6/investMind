@@ -7,6 +7,7 @@
 **InvestMind（智投进化平台）** 是一个 AI + 人工协同的投资研究平台，核心目标是让投资分析模型能够持续自我优化、逐步贴合人工的投资理念。
 
 核心流程：
+
 ```
 AI生成报告 → 人工修正 → 数据双存储 → 模型迭代学习
      ↓            ↓          ↓               ↓
@@ -16,6 +17,7 @@ MySQL存储    MySQL+向量库   向量数据库      RAG增强生成
 ## 技术栈
 
 ### 后端 (investmind/)
+
 - **框架**: Spring Boot 3.2.0
 - **JDK**: Java 17
 - **ORM**: MyBatis-Plus 3.5.7
@@ -25,6 +27,7 @@ MySQL存储    MySQL+向量库   向量数据库      RAG增强生成
 - **其他**: Lombok, Fastjson2, HttpClient5
 
 ### 前端 (investmind-web/)
+
 - **框架**: Vue 3.4 + Composition API
 - **构建工具**: Vite 5
 - **UI 组件库**: Element Plus 2.5
@@ -71,6 +74,7 @@ InvestMind/
 ## 开发规范
 
 ### 后端规范
+
 - 包名: `com.investmind.*`
 - 实体类使用 Lombok 注解简化代码
 - 数据库实体使用驼峰命名，对应下划线字段名
@@ -78,6 +82,7 @@ InvestMind/
 - 服务层接口与实现分离，实现类以 `Impl` 结尾
 
 ### 前端规范
+
 - 使用 Vue 3 Composition API + `<script setup>` 语法
 - 组件命名使用 PascalCase
 - API 接口统一封装在 `src/api/` 目录
@@ -85,6 +90,7 @@ InvestMind/
 - 遵循 Gemini 设计风格：渐变背景、玻璃拟态、大圆角
 
 ### Git 提交规范
+
 ```
 feat: 新功能
 fix: 修复 bug
@@ -99,6 +105,7 @@ chore: 构建/工具相关
 ## 常用命令
 
 ### 后端
+
 ```bash
 cd investmind
 mvn spring-boot:run              # 开发模式启动
@@ -107,6 +114,7 @@ mvn clean compile                # 编译
 ```
 
 ### 前端
+
 ```bash
 cd investmind-web
 npm install                      # 安装依赖
@@ -116,14 +124,28 @@ npm run preview                  # 预览生产构建
 ```
 
 ### 数据库
+
 ```bash
-# 初始化数据库
-mysql -u root -p < investmind/src/main/resources/db/schema.sql
+# 首次启动必须先建库
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS investmind DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# 初始化表结构
+mysql -u root -p investmind < investmind/src/main/resources/db/schema.sql
 ```
+
+## 启动前基础要求（必做）
+
+每次新环境首次启动时，必须先完成以下步骤：
+
+1. 确认 MySQL 服务已启动（默认 `localhost:3306`）
+2. 创建数据库 `investmind`（如已存在可跳过）
+3. 执行 `schema.sql` 初始化表结构
+4. 再启动后端服务（否则可能出现 `Unknown database 'investmind'`）
 
 ## 配置说明
 
 ### 后端配置 (application.yml)
+
 ```yaml
 spring:
   datasource:
@@ -142,7 +164,9 @@ investmind:
 ```
 
 ### 前端代理配置 (vite.config.js)
+
 开发环境已配置代理：
+
 ```javascript
 server: {
   proxy: {
@@ -157,6 +181,7 @@ server: {
 ## 核心功能模块
 
 ### 1. 报告管理
+
 - **InvestReportController**: `/api/reports/*`
   - `POST /generate` - AI 生成报告
   - `POST /correct` - 人工修正报告
@@ -165,6 +190,7 @@ server: {
   - `POST /list` - 分页查询报告列表
 
 ### 2. 向量管理
+
 - **VectorController**: `/api/vectors/*`
   - `GET /health` - 检查向量数据库连接
   - `GET /pending` - 获取待向量化报告
@@ -173,6 +199,7 @@ server: {
   - `GET /search` - 检索相似内容
 
 ### 3. 统计分析
+
 - **StatsController**: `/api/stats/*`
   - `GET /overview` - 统计数据概览
   - `GET /learning-progress` - 模型学习进度
@@ -180,6 +207,7 @@ server: {
 ## 数据模型
 
 ### 核心实体
+
 - **InvestReport** - 投资报告（AI生成内容、人工修正内容、质量评分等）
 - **ReportCorrectionLog** - 修正记录日志
 - **VectorIndexRecord** - 向量索引记录
@@ -208,3 +236,4 @@ server: {
 - [Vue 3 文档](https://vuejs.org/)
 - [Element Plus 文档](https://element-plus.org/)
 - [Milvus 文档](https://milvus.io/docs)
+

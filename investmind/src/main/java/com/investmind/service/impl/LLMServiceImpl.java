@@ -1,6 +1,7 @@
 package com.investmind.service.impl;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.investmind.dto.ReportRequest;
 import com.investmind.service.LLMService;
@@ -9,39 +10,52 @@ import com.investmind.service.WebResearchService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.io.entity.StringEntity;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.StringJoiner;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-/**
- * 大模型服务实现类
- * 这里以 OpenAI 格式为例，可根据实际情况替换为其他模型
- */
 @Slf4j
 @Service
 public class LLMServiceImpl implements LLMService {
 
+    private static final String BASE_SYSTEM_PROMPT_PATH = "classpath:prompts/system/base-system-en.md";
+    private static final String REPORT_SYSTEM_PROMPT_PATH = "classpath:prompts/system/report-system-en.md";
+    private static final String QA_SYSTEM_PROMPT_PATH = "classpath:prompts/system/qa-system-en.md";
+    private static final String PHILOSOPHY_EXTRACT_SYSTEM_PROMPT_PATH = "classpath:prompts/system/philosophy-extract-system-en.md";
+    private static final String PHILOSOPHY_DOC_SYSTEM_PROMPT_PATH = "classpath:prompts/system/philosophy-document-system-en.md";
+    private static final Pattern TEMPLATE_VAR_PATTERN = Pattern.compile("\\$\\{([A-Z0-9_]+)}");
+
+    private final VectorService vectorService;
+    private final WebResearchService webResearchService;
+    private final ResourceLoader resourceLoader;
+
     @Value("${investmind.ai.api-key:}")
     private String apiKey;
 
-    @Value("${investmind.ai.base-url:https://api.openai.com/v1}")
+    @Value("${investmind.ai.base-url:}")
     private String baseUrl;
 
-    @Value("${investmind.ai.model:gpt-4}")
+    @Value("${investmind.ai.model:moonshot-v1-8k}")
     private String model;
+
+    @Value("${investmind.ai.chat-endpoint:/chat/completions}")
+    private String chatEndpoint;
 
     @Value("${investmind.ai.max-tokens:1000}")
     private Integer maxTokens;
@@ -49,21 +63,14 @@ public class LLMServiceImpl implements LLMService {
     @Value("${investmind.ai.temperature:0.7}")
     private Double temperature;
 
-    @Value("${investmind.ai.chat-endpoint:/chat/completions}")
-    private String chatEndpoint;
-
-    @Value("${investmind.ai.embedding-endpoint:/embeddings}")
-    private String embeddingEndpoint;
-
-    @Value("${investmind.ai.embedding-model:text-embedding-ada-002}")
-    private String embeddingModel;
-
-    @Lazy
-    @Autowired
-    private VectorService vectorService;
-
-    @Autowired
-    private WebResearchService webResearchService;
+    public LLMServiceImpl(
+            @Lazy VectorService vectorService,
+            WebResearchService webResearchService,
+            ResourceLoader resourceLoader) {
+        this.vectorService = vectorService;
+        this.webResearchService = webResearchService;
+        this.resourceLoader = resourceLoader;
+    }
 
     private static final String DEFAULT_PROMPT = """
             请作为专业投资分析师，生成一份今日投资分析报告（约500-800字）。
@@ -88,47 +95,13 @@ public class LLMServiceImpl implements LLMService {
 
     @Override
     public String generateReport(ReportRequest.GenerateRequest request, Long userId) {
-        // 构建提示词
         String prompt = buildPrompt(request, userId);
-
-        // 调用大模型API
         return callLLMApi(prompt);
     }
 
     @Override
     public List<Float> getEmbedding(String text) {
-        try {
-            String url = buildUrl(baseUrl, embeddingEndpoint);
-            HttpPost httpPost = new HttpPost(url);
-            httpPost.setHeader("Authorization", "Bearer " + apiKey);
-            httpPost.setHeader("Content-Type", "application/json");
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("input", text);
-            requestBody.put("model", embeddingModel); // 或其他 embedding 模型
-
-            httpPost.setEntity(new StringEntity(JSON.toJSONString(requestBody), StandardCharsets.UTF_8));
-
-            try (CloseableHttpClient client = HttpClients.createDefault();
-                 CloseableHttpResponse response = client.execute(httpPost)) {
-                int statusCode = response.getCode();
-                String result = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-                JSONObject json = JSON.parseObject(result);
-
-                if (json.containsKey("data")) {
-                    JSONObject data = json.getJSONArray("data").getJSONObject(0);
-                    List<Float> embedding = new ArrayList<>();
-                    for (Object val : data.getJSONArray("embedding")) {
-                        embedding.add(((Number) val).floatValue());
-                    }
-                    return embedding;
-                } else {
-                    log.warn("Embedding接口返回异常，status={}, body={}", statusCode, result);
-                }
-            }
-        } catch (Exception e) {
-            log.error("获取向量表示失败", e);
-        }
+        log.warn("Embedding service not configured, returning empty list");
         return new ArrayList<>();
     }
 
@@ -155,18 +128,22 @@ public class LLMServiceImpl implements LLMService {
 
     @Override
     public String answerQuestion(String question, String investmentContext) {
+        if (isPhilosophyRecallQuestion(question)) {
+            if (!StringUtils.hasText(investmentContext)) {
+                return "你当前还没有可用的投资理念内容。请先在“投资理念”页面填写，或使用 /add 录入后再让我复述。";
+            }
+            return "以下是你当前保存的投资理念（按数据库内容整理展示）：\n\n" + investmentContext;
+        }
+
+        if (isPhilosophySummaryQuestion(question)) {
+            if (!StringUtils.hasText(investmentContext)) {
+                return "你当前还没有可用的投资理念内容，暂时无法总结。请先录入投资理念后再试。";
+            }
+            return buildPhilosophySummaryFromContext(investmentContext);
+        }
+
         String webContext = webResearchService.research(question);
         StringBuilder prompt = new StringBuilder();
-        prompt.append("你是一位严格执行用户投资体系的投研助手，请使用中文回答。");
-        prompt.append("\n核心原则：必须以用户投资理念为第一优先级，不能给与理念冲突的建议。");
-        prompt.append("\n输出格式要求：");
-        prompt.append("\n8.1 关键结论（3-5条，量化表达）");
-        prompt.append("\n8.2 关键数据与证据（列出来源线索，避免空泛）");
-        prompt.append("\n8.3 操作建议（必须给出价格区间+仓位+触发条件）");
-        prompt.append("\n8.4 可比标的对比（至少1个可比对象）");
-        prompt.append("\n8.5 一句话总结");
-        prompt.append("\n并在结尾增加：数据置信度声明 + 风险提示。");
-        prompt.append("\n禁止输出空泛宏观描述，必须落到可执行层。");
         if (StringUtils.hasText(investmentContext)) {
             prompt.append("\n\n【用户投资理念】\n").append(investmentContext);
         }
@@ -176,35 +153,34 @@ public class LLMServiceImpl implements LLMService {
             prompt.append("\n\n【互联网检索摘要（最新）】\n未获取到可靠联网数据，必须在回答中明确数据不足，不得编造。");
         }
         prompt.append("\n\n【用户问题】\n").append(question);
-        return callLLMApi(prompt.toString());
+        if (!StringUtils.hasText(apiKey)) {
+            log.warn("未配置AI API Key，问答接口使用本地降级回答");
+            return buildFallbackAnswer(question, investmentContext, webContext);
+        }
+        return callWithSystemPrompt(
+                QA_SYSTEM_PROMPT_PATH,
+                "You are an investment research assistant. Follow the user's investment philosophy first, and respond in Chinese with structured, actionable output.",
+                prompt.toString());
     }
 
     @Override
     public Map<String, String> extractPhilosophyFields(String inputText, String currentContext) {
-        if (!StringUtils.hasText(apiKey) || "your-api-key".equals(apiKey)) {
+        if (!StringUtils.hasText(apiKey)) {
             return heuristicExtract(inputText);
         }
 
         String prompt = """
-                你是投资理念结构化助手。请将用户输入解析为JSON对象，只输出JSON，不要任何额外文本。
-                可选字段键如下：
-                coreInvestmentPhilosophy, stockSelectionCriteria, valuationLogic,
-                positionManagementRules, sellConditions, riskPreference, holdingPeriod,
-                investmentHorizon, industryRestrictions, preferredSectors, avoidSectors,
-                riskManagement, strategyNotes, philosophyDescription
-
-                规则：
-                1) 只返回有明确信息的字段
-                2) 字段值使用中文短段落
-                3) 不要返回null
-
                 当前已有投资理念：
-                """ + (StringUtils.hasText(currentContext) ? currentContext : "无") + """
+                %s
 
                 用户最新输入：
-                """ + inputText;
+                %s
+                """.formatted(StringUtils.hasText(currentContext) ? currentContext : "无", inputText);
 
-        String raw = callLLMApi(prompt);
+        String raw = callWithSystemPrompt(
+                PHILOSOPHY_EXTRACT_SYSTEM_PROMPT_PATH,
+                "You extract investment philosophy fields and only return a JSON object.",
+                prompt);
         String jsonText = extractJsonObject(raw);
         if (!StringUtils.hasText(jsonText)) {
             return heuristicExtract(inputText);
@@ -228,41 +204,32 @@ public class LLMServiceImpl implements LLMService {
 
     @Override
     public String generatePhilosophyDocument(String structuredContext) {
-        if (!StringUtils.hasText(apiKey) || "your-api-key".equals(apiKey)) {
+        if (!StringUtils.hasText(apiKey)) {
             return fallbackDocument(structuredContext);
         }
 
         String prompt = """
-                你是投资研究写作助手。请把给定结构化字段整理成一篇完整、专业、连贯的投资理念文档。
-                要求：
-                1) 使用Markdown标题结构
-                2) 不要编造不存在的信息
-                3) 语言简洁专业
-                4) 明确风险边界与执行纪律
-
                 结构化内容：
-                """ + structuredContext;
-        return callLLMApi(prompt);
+                %s
+                """.formatted(structuredContext);
+        return callWithSystemPrompt(
+                PHILOSOPHY_DOC_SYSTEM_PROMPT_PATH,
+                "You are an investment writing assistant. Produce a concise and professional Markdown document without hallucination.",
+                prompt);
     }
 
-    /**
-     * 构建提示词
-     */
     private String buildPrompt(ReportRequest.GenerateRequest request, Long userId) {
         StringBuilder prompt = new StringBuilder();
 
-        // 如果有自定义提示词则使用，否则使用默认
         if (StringUtils.hasText(request.getCustomPrompt())) {
             prompt.append(request.getCustomPrompt());
         } else {
             prompt.append(DEFAULT_PROMPT);
         }
 
-        // 添加日期信息
         prompt.append("\n\n报告日期: ").append(request.getReportDate());
         prompt.append("\n报告类型: ").append(request.getReportType());
 
-        // 如果使用历史内容增强，则检索相似内容
         if (Boolean.TRUE.equals(request.getUseHistoricalContent())) {
             try {
                 List<String> similarContent = vectorService.searchSimilarContent(
@@ -281,76 +248,19 @@ public class LLMServiceImpl implements LLMService {
             }
         }
 
-        // TODO: 第三阶段将融入用户投资理念和学习模式
-
         return prompt.toString();
     }
 
-    /**
-     * 调用大模型API
-     */
     private String callLLMApi(String prompt) {
-        // 如果没有配置API Key，返回模拟数据（开发测试用）
-        if (!StringUtils.hasText(apiKey) || "your-api-key".equals(apiKey)) {
+        if (!StringUtils.hasText(apiKey)) {
             log.warn("未配置AI API Key，返回模拟数据");
             return generateMockReport();
         }
 
-        try {
-            String url = buildUrl(baseUrl, chatEndpoint);
-            HttpPost httpPost = new HttpPost(url);
-            httpPost.setHeader("Authorization", "Bearer " + apiKey);
-            httpPost.setHeader("Content-Type", "application/json");
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("model", model);
-            requestBody.put("max_tokens", maxTokens);
-            requestBody.put("temperature", temperature);
-            requestBody.put("stream", false);
-            
-            List<Map<String, String>> messages = new ArrayList<>();
-            Map<String, String> systemMessage = new HashMap<>();
-            systemMessage.put("role", "system");
-            systemMessage.put("content", "你是专业投资研究助手，输出中文、结构化、审慎并包含风险提示。");
-            messages.add(systemMessage);
-            Map<String, String> userMessage = new HashMap<>();
-            userMessage.put("role", "user");
-            userMessage.put("content", prompt);
-            messages.add(userMessage);
-            requestBody.put("messages", messages);
-
-            httpPost.setEntity(new StringEntity(JSON.toJSONString(requestBody), StandardCharsets.UTF_8));
-
-            try (CloseableHttpClient client = HttpClients.createDefault();
-                 CloseableHttpResponse response = client.execute(httpPost)) {
-                int statusCode = response.getCode();
-                String result = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-                JSONObject json = JSON.parseObject(result);
-
-                if (json.containsKey("choices")) {
-                    JSONObject message = json.getJSONArray("choices")
-                            .getJSONObject(0)
-                            .getJSONObject("message");
-                    String content = extractMessageContent(message);
-                    if (StringUtils.hasText(content)) {
-                        return content;
-                    }
-                    log.warn("LLM响应中 choices 存在但无法解析内容，status={}, body={}", statusCode, result);
-                } else if (json.containsKey("error")) {
-                    String msg = json.getJSONObject("error").getString("message");
-                    log.error("API调用失败，status={}, message={}", statusCode, msg);
-                    throw new RuntimeException("AI服务调用失败(" + statusCode + "): " + msg);
-                } else {
-                    log.error("API调用失败，status={}, body={}", statusCode, result);
-                    throw new RuntimeException("AI服务调用失败(" + statusCode + "): 返回格式不支持");
-                }
-            }
-        } catch (Exception e) {
-            log.error("调用大模型API失败", e);
-            throw new RuntimeException("生成报告失败: " + e.getMessage());
-        }
-        
-        return generateMockReport();
+        return callWithSystemPrompt(
+                REPORT_SYSTEM_PROMPT_PATH,
+                "You are a professional investment research assistant. Respond in Chinese with structured analysis and explicit risk warnings.",
+                prompt);
     }
 
     private String extractJsonObject(String raw) {
@@ -365,47 +275,201 @@ public class LLMServiceImpl implements LLMService {
         return null;
     }
 
-    private String buildUrl(String rawBaseUrl, String rawEndpoint) {
-        String b = StringUtils.hasText(rawBaseUrl) ? rawBaseUrl.trim() : "";
-        String e = StringUtils.hasText(rawEndpoint) ? rawEndpoint.trim() : "/chat/completions";
-        while (b.endsWith("/")) {
-            b = b.substring(0, b.length() - 1);
+    private String callWithSystemPrompt(String promptPath, String fallbackSystemPrompt, String userPrompt) {
+        try {
+            String systemPrompt = loadSystemPrompt(promptPath, fallbackSystemPrompt);
+            return callApi(systemPrompt, userPrompt);
+        } catch (Exception e) {
+            log.error("调用大模型API失败", e);
+            String message = e.getMessage();
+            if (StringUtils.hasText(message) && message.contains("status: 401")) {
+                throw new RuntimeException("生成内容失败: 大模型鉴权失败（401），请检查 AI_API_KEY 是否正确，且与 base-url/model 匹配");
+            }
+            throw new RuntimeException("生成内容失败: " + message);
         }
-        if (!e.startsWith("/")) {
-            e = "/" + e;
-        }
-        return b + e;
     }
 
-    private String extractMessageContent(JSONObject message) {
-        if (message == null) {
-            return null;
-        }
-        Object contentObj = message.get("content");
-        if (contentObj instanceof String str) {
-            return str;
-        }
-        if (contentObj instanceof com.alibaba.fastjson2.JSONArray arr) {
-            StringJoiner joiner = new StringJoiner("\n");
-            for (int i = 0; i < arr.size(); i++) {
-                Object item = arr.get(i);
-                if (item instanceof JSONObject part) {
-                    String text = part.getString("text");
-                    if (!StringUtils.hasText(text)) {
-                        Object innerText = part.get("content");
-                        if (innerText instanceof String s && StringUtils.hasText(s)) {
-                            text = s;
+    private String callApi(String systemPrompt, String userPrompt) throws Exception {
+        String url = buildChatUrl();
+        
+        JSONObject requestBody = new JSONObject();
+        requestBody.put("model", model);
+        requestBody.put("max_tokens", maxTokens);
+        requestBody.put("temperature", temperature);
+        
+        JSONArray messages = new JSONArray();
+        messages.add(JSON.parseObject("{\"role\": \"system\", \"content\": \"" + escapeJson(systemPrompt) + "\"}"));
+        messages.add(JSON.parseObject("{\"role\": \"user\", \"content\": \"" + escapeJson(userPrompt) + "\"}"));
+        requestBody.put("messages", messages);
+
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            HttpPost httpPost = new HttpPost(url);
+            httpPost.setHeader("Content-Type", "application/json");
+            httpPost.setHeader("Authorization", "Bearer " + apiKey);
+            httpPost.setEntity(new StringEntity(requestBody.toString(), ContentType.APPLICATION_JSON));
+
+            return httpClient.execute(httpPost, response -> {
+                if (response.getCode() >= 200 && response.getCode() < 300) {
+                    String responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+                    JSONObject jsonResponse = JSON.parseObject(responseBody);
+                    JSONArray choices = jsonResponse.getJSONArray("choices");
+                    if (choices != null && !choices.isEmpty()) {
+                        JSONObject choice = choices.getJSONObject(0);
+                        JSONObject message = choice.getJSONObject("message");
+                        if (message != null) {
+                            return message.getString("content");
                         }
                     }
-                    if (StringUtils.hasText(text)) {
-                        joiner.add(text);
+                    throw new RuntimeException("API response format error");
+                } else {
+                    String errorBody = "";
+                    if (response.getEntity() != null) {
+                        errorBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+                        if (errorBody.length() > 500) {
+                            errorBody = errorBody.substring(0, 500);
+                        }
                     }
+                    throw new RuntimeException("API request failed with status: " + response.getCode() +
+                            (StringUtils.hasText(errorBody) ? (", body: " + errorBody) : ""));
                 }
-            }
-            String out = joiner.toString();
-            return StringUtils.hasText(out) ? out : null;
+            });
         }
-        return null;
+    }
+
+    private String buildChatUrl() {
+        String base = StringUtils.hasText(baseUrl) ? baseUrl.trim() : "";
+        String endpoint = StringUtils.hasText(chatEndpoint) ? chatEndpoint.trim() : "/chat/completions";
+        if (base.endsWith("/") && endpoint.startsWith("/")) {
+            return base.substring(0, base.length() - 1) + endpoint;
+        }
+        if (!base.endsWith("/") && !endpoint.startsWith("/")) {
+            return base + "/" + endpoint;
+        }
+        return base + endpoint;
+    }
+
+    private String buildFallbackAnswer(String question, String investmentContext, String webContext) {
+        String philosophy = StringUtils.hasText(investmentContext) ? investmentContext : "（未设置投资理念）";
+        String webHint = StringUtils.hasText(webContext) ? "已获取到部分联网摘要，可结合判断。" : "未获取到可靠联网数据，请谨慎决策。";
+        return """
+                当前系统未配置可用的大模型密钥，先提供降级分析建议：
+
+                ## 结论摘要
+                - 问题：%s
+                - 联网状态：%s
+                - 建议：先补齐关键财务与估值数据，再决定交易动作。
+
+                ## 执行建议
+                1. 按你的投资理念先做一轮筛选，剔除不符合风险偏好的标的。
+                2. 优先核对三项硬指标：现金流、估值区间、盈利可持续性。
+                3. 若准备建仓，采用分批进场并设置止损位，避免一次性重仓。
+
+                ## 你的投资理念参考
+                %s
+
+                > 提示：配置 `AI_API_KEY` 后可恢复真实大模型回答。
+                """.formatted(question, webHint, philosophy);
+    }
+
+    private boolean isPhilosophyRecallQuestion(String question) {
+        if (!StringUtils.hasText(question)) {
+            return false;
+        }
+        String q = question.trim();
+        boolean asksPhilosophy = q.contains("投资理念");
+        boolean asksRecall = q.contains("是什么")
+                || q.contains("完整")
+                || q.contains("复述")
+                || q.contains("原文")
+                || q.contains("全部")
+                || q.contains("完整拿出来");
+        return asksPhilosophy && asksRecall;
+    }
+
+    private boolean isPhilosophySummaryQuestion(String question) {
+        if (!StringUtils.hasText(question)) {
+            return false;
+        }
+        String q = question.trim();
+        boolean asksPhilosophy = q.contains("投资理念");
+        boolean asksSummary = q.contains("总结")
+                || q.contains("归纳")
+                || q.contains("提炼")
+                || q.contains("简化")
+                || q.contains("概括");
+        return asksPhilosophy && asksSummary;
+    }
+
+    private String buildPhilosophySummaryFromContext(String investmentContext) {
+        String[] lines = investmentContext.split("\\r?\\n");
+        StringBuilder out = new StringBuilder("基于你当前保存的投资理念，这里是简要总结（不改写核心含义）：\n\n");
+        int count = 0;
+        for (String line : lines) {
+            if (!StringUtils.hasText(line)) {
+                continue;
+            }
+            out.append("- ").append(line.trim()).append("\n");
+            count++;
+            if (count >= 6) {
+                break;
+            }
+        }
+        if (count == 0) {
+            return "你当前还没有可用于总结的投资理念字段。";
+        }
+        out.append("\n如需“完整原文”，可以直接问：我的投资理念是什么？请完整复述。");
+        return out.toString();
+    }
+
+    private String escapeJson(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("\\", "\\\\")
+                   .replace("\"", "\\\"")
+                   .replace("\n", "\\n")
+                   .replace("\r", "\\r")
+                   .replace("\t", "\\t");
+    }
+
+    private String loadSystemPrompt(String promptPath, String fallbackSystemPrompt) {
+        Map<String, String> variables = new HashMap<>();
+        variables.put("CURRENT_DATE", LocalDate.now().toString());
+        variables.put("MODEL_NAME", StringUtils.hasText(model) ? model : "unknown-model");
+        try {
+            String basePrompt = loadPromptText(BASE_SYSTEM_PROMPT_PATH);
+            String scenePrompt = loadPromptText(promptPath);
+            String merged = StringUtils.hasText(basePrompt) ? (basePrompt + "\n\n" + scenePrompt) : scenePrompt;
+            return renderTemplate(merged, variables);
+        } catch (Exception e) {
+            log.warn("读取系统提示词失败，使用默认提示词: {}", promptPath, e);
+            return fallbackSystemPrompt;
+        }
+    }
+
+    private String loadPromptText(String promptPath) throws Exception {
+        Resource resource = resourceLoader.getResource(promptPath);
+        if (!resource.exists()) {
+            throw new IllegalStateException("Prompt file not found: " + promptPath);
+        }
+        try (InputStream inputStream = resource.getInputStream()) {
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8).trim();
+        }
+    }
+
+    private String renderTemplate(String template, Map<String, String> variables) {
+        Matcher matcher = TEMPLATE_VAR_PATTERN.matcher(template);
+        StringBuffer out = new StringBuffer();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            String val = variables.get(key);
+            if (val == null) {
+                throw new IllegalStateException("Missing prompt variable: " + key);
+            }
+            matcher.appendReplacement(out, Matcher.quoteReplacement(val));
+        }
+        matcher.appendTail(out);
+        return out.toString();
     }
 
     private Map<String, String> heuristicExtract(String inputText) {
@@ -453,9 +517,6 @@ public class LLMServiceImpl implements LLMService {
                 """.formatted(StringUtils.hasText(structuredContext) ? structuredContext : "暂无已沉淀的结构化理念，请先输入你的投资思路。");
     }
 
-    /**
-     * 生成模拟报告（用于开发和测试）
-     */
     private String generateMockReport() {
         return """
                 ## 一、市场概况
